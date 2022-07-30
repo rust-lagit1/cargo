@@ -401,6 +401,12 @@ pub fn create_bcx<'a, 'cfg>(
     } = resolve;
 
     let std_resolve_features = if let Some(crates) = &config.cli_unstable().build_std {
+        if build_config.build_plan {
+            config
+                .shell()
+                .warn("-Zbuild-std does not currently fully support --build-plan")?;
+        }
+
         let (std_package_set, std_resolve, std_features) =
             standard_lib::resolve_std(ws, &target_data, &build_config, crates)?;
         pkg_set.add_set(std_package_set);
@@ -467,14 +473,6 @@ pub fn create_bcx<'a, 'cfg>(
     // assuming `--target $HOST` was specified. See
     // `rebuild_unit_graph_shared` for more on why this is done.
     let explicit_host_kind = CompileKind::Target(CompileTarget::new(&target_data.rustc.host)?);
-    let explicit_host_kinds: Vec<_> = build_config
-        .requested_kinds
-        .iter()
-        .map(|kind| match kind {
-            CompileKind::Host => explicit_host_kind,
-            CompileKind::Target(t) => CompileKind::Target(*t),
-        })
-        .collect();
 
     // Passing `build_config.requested_kinds` instead of
     // `explicit_host_kinds` here so that `generate_targets` can do
@@ -549,7 +547,8 @@ pub fn create_bcx<'a, 'cfg>(
             &crates,
             std_resolve,
             std_features,
-            &explicit_host_kinds,
+            &build_config.requested_kinds,
+            explicit_host_kind,
             &pkg_set,
             interner,
             &profiles,
@@ -1011,19 +1010,7 @@ fn generate_targets(
         // why this is done. However, if the package has its own
         // `package.target` key, then this gets used instead of
         // `$HOST`
-        let explicit_kinds = if let Some(k) = pkg.manifest().forced_kind() {
-            vec![k]
-        } else {
-            requested_kinds
-                .iter()
-                .map(|kind| match kind {
-                    CompileKind::Host => {
-                        pkg.manifest().default_kind().unwrap_or(explicit_host_kind)
-                    }
-                    CompileKind::Target(t) => CompileKind::Target(*t),
-                })
-                .collect()
-        };
+        let explicit_kinds = pkg.explicit_kinds(requested_kinds, explicit_host_kind);
 
         for kind in explicit_kinds.iter() {
             let unit_for = if initial_target_mode.is_any_test() {

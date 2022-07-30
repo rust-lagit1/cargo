@@ -186,6 +186,34 @@ impl Package {
         self.targets().iter().any(|t| t.is_custom_build())
     }
 
+    /// Returns explicit kinds either forced by `forced-target` in `Cargo.toml`,
+    /// fallback to `default-target`, or specified in cli parameters.
+    ///
+    /// If `--target` has not been specified, then the return value
+    /// is the same as if `--target $HOST` was specified. See
+    /// `rebuild_unit_graph_shared` for why callers want to do this.
+    ///  However, if the package has its own `package.default-target`
+    ///  key, then that gets used instead of `$HOST`
+    pub fn explicit_kinds(
+        &self,
+        requested_kinds: &[CompileKind],
+        explicit_host_kind: CompileKind,
+    ) -> Vec<CompileKind> {
+        if let Some(k) = self.manifest().forced_kind() {
+            vec![k]
+        } else {
+            requested_kinds
+                .iter()
+                .map(|kind| match kind {
+                    CompileKind::Host => {
+                        self.manifest().default_kind().unwrap_or(explicit_host_kind)
+                    }
+                    CompileKind::Target(t) => CompileKind::Target(*t),
+                })
+                .collect()
+        }
+    }
+
     pub fn map_source(self, to_replace: SourceId, replace_with: SourceId) -> Package {
         Package {
             inner: Rc::new(PackageInner {
