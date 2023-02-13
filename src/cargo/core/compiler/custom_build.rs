@@ -201,6 +201,13 @@ fn build_work(cx: &mut Context<'_, '_>, unit: &Unit) -> CargoResult<Job> {
                 ProfileRoot::Debug => "debug",
             },
         )
+        .env(
+            "CARGO_BUILD_DEPENDENCY_TYPE",
+            match unit.kind.is_host() {
+                true => "host",
+                false => "target",
+            },
+        )
         .env("HOST", &bcx.host_triple())
         .env("RUSTC", &bcx.rustc().path)
         .env("RUSTDOC", &*bcx.config.rustdoc()?)
@@ -209,6 +216,16 @@ fn build_work(cx: &mut Context<'_, '_>, unit: &Unit) -> CargoResult<Job> {
     // Find all artifact dependencies and make their file and containing directory discoverable using environment variables.
     for (var, value) in artifact::get_env(cx, dependencies)? {
         cmd.env(&var, value);
+    }
+
+    if !unit.kind.is_host() {
+        cmd.env(
+            "CARGO_BUILD_TYPE",
+            match &bcx.target_data.is_cross() {
+                true => "cross",
+                false => "native",
+            },
+        );
     }
 
     if let Some(linker) = &bcx.target_data.target_config(unit.kind).linker {
