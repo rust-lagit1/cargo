@@ -2615,6 +2615,7 @@ pub struct CargoBuildConfig {
     // deprecated alias for artifact-dir
     pub out_dir: Option<ConfigRelativePath>,
     pub artifact_dir: Option<ConfigRelativePath>,
+    pub sbom: Option<bool>,
 }
 
 /// Configuration for `build.target`.
