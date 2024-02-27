@@ -10,7 +10,7 @@ use cargo_util_schemas::core::PackageIdSpec;
 use itertools::Itertools;
 use serde::Serialize;
 
-use crate::core::profiles::Profile;
+use crate::core::{profiles::Profile, PackageId};
 use crate::core::{Target, TargetKind};
 use crate::util::Rustc;
 use crate::{core::compiler::FileFlavor, CargoResult};
@@ -29,30 +29,65 @@ impl<const V: u32> Serialize for SbomFormatVersion<V> {
     }
 }
 
+/// A package dependency
 #[derive(Serialize, Clone, Debug)]
 struct SbomDependency {
-    package_id: PackageIdSpec,
-    package: String,
+    name: String,
+    package_id: PackageId,
     version: String,
     features: Vec<String>,
-    extern_crate_name: String,
 }
 
 impl From<&UnitDep> for SbomDependency {
     fn from(dep: &UnitDep) -> Self {
+        let package_id = dep.unit.pkg.package_id();
+        let name = package_id.name().to_string();
+        let version = package_id.version().to_string();
         let features = dep
             .unit
             .features
             .iter()
-            .map(|dep| dep.to_string())
+            .map(|f| f.to_string())
             .collect_vec();
 
         Self {
-            package_id: dep.unit.pkg.package_id().to_spec(),
-            package: dep.unit.pkg.package_id().name().to_string(),
-            version: dep.unit.pkg.package_id().version().to_string(),
+            name,
+            package_id,
+            version,
+            features,
+        }
+    }
+}
+
+#[derive(Serialize, Clone, Debug)]
+struct SbomPackage {
+    package_id: PackageId,
+    package: String,
+    version: String,
+    features: Vec<String>,
+    extern_crate_name: String,
+    dependencies: Vec<SbomDependency>,
+}
+
+impl SbomPackage {
+    pub fn new(dep: &UnitDep, dependencies: Vec<SbomDependency>) -> Self {
+        let package_id = dep.unit.pkg.package_id();
+        let package = package_id.name().to_string();
+        let version = package_id.version().to_string();
+        let features = dep
+            .unit
+            .features
+            .iter()
+            .map(|f| f.to_string())
+            .collect_vec();
+
+        Self {
+            package_id,
+            package,
+            version,
             features,
             extern_crate_name: dep.extern_crate_name.to_string(),
+            dependencies,
         }
     }
 }
@@ -76,7 +111,7 @@ impl From<&Target> for SbomTarget {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 struct SbomRustc {
     version: String,
     wrapper: Option<PathBuf>,
@@ -104,13 +139,13 @@ struct Sbom {
     source: String,
     target: SbomTarget,
     profile: Profile,
-    dependencies: Vec<SbomDependency>,
+    packages: Vec<SbomPackage>,
     features: Vec<String>,
     rustc: SbomRustc,
 }
 
 impl Sbom {
-    pub fn new(unit: &Unit, dependencies: Vec<SbomDependency>, rustc: SbomRustc) -> Self {
+    pub fn new(unit: &Unit, packages: Vec<SbomPackage>, rustc: SbomRustc) -> Self {
         let package_id = unit.pkg.summary().package_id().to_spec();
         let name = unit.pkg.name().to_string();
         let version = unit.pkg.version().to_string();
@@ -127,7 +162,7 @@ impl Sbom {
             source,
             target,
             profile,
-            dependencies,
+            packages,
             features,
             rustc,
         }
@@ -138,8 +173,9 @@ impl Sbom {
 ///
 pub fn output_sbom(build_runner: &mut BuildRunner<'_, '_>, unit: &Unit) -> CargoResult<()> {
     let bcx = build_runner.bcx;
+    let rustc: SbomRustc = bcx.rustc().into();
 
-    let dependencies = fetch_dependencies(build_runner, unit);
+    let packages = fetch_packages(build_runner, unit);
 
     // TODO collect build & unit data, then transform into JSON output
     for output in build_runner
@@ -150,8 +186,7 @@ pub fn output_sbom(build_runner: &mut BuildRunner<'_, '_>, unit: &Unit) -> Cargo
         if let Some(ref link_dst) = output.hardlink {
             let output_path = link_dst.with_extension("cargo-sbom.json");
 
-            let rustc = bcx.rustc().into();
-            let sbom = Sbom::new(unit, dependencies.clone(), rustc);
+            let sbom = Sbom::new(unit, packages.clone(), rustc.clone());
 
             let mut outfile = BufWriter::new(paths::create(output_path.clone())?);
             let output = serde_json::to_string_pretty(&sbom)?;
@@ -164,29 +199,32 @@ pub fn output_sbom(build_runner: &mut BuildRunner<'_, '_>, unit: &Unit) -> Cargo
 
 /// Fetch all dependencies, including transitive ones. A dependency can also appear multiple times
 /// if it's included with different versions.
-fn fetch_dependencies(build_runner: &mut BuildRunner<'_, '_>, unit: &Unit) -> Vec<SbomDependency> {
+fn fetch_packages(build_runner: &mut BuildRunner<'_, '_>, unit: &Unit) -> Vec<SbomPackage> {
     let unit_graph = &build_runner.bcx.unit_graph;
     let root_deps = build_runner.unit_deps(unit);
 
     let mut result = Vec::new();
     let mut queue: BTreeSet<&UnitDep> = root_deps.iter().collect();
-    let mut visited: BTreeSet<&UnitDep> = BTreeSet::new();
+    let mut visited = BTreeSet::new();
 
-    while let Some(dependency) = queue.pop_first() {
+    while let Some(package) = queue.pop_first() {
         // ignore any custom build scripts.
-        if dependency.unit.mode.is_run_custom_build() {
+        if package.unit.mode.is_run_custom_build() {
             continue;
         }
-        if visited.contains(dependency) {
+        if visited.contains(package) {
             continue;
         }
 
-        result.push(dependency);
-        visited.insert(dependency);
+        let mut dependencies: BTreeSet<&UnitDep> = unit_graph[&package.unit].iter().collect();
+        let sbom_dependencies = dependencies.iter().map(|dep| (*dep).into()).collect_vec();
 
-        let mut dependencies: BTreeSet<&UnitDep> = unit_graph[&dependency.unit].iter().collect();
+        result.push(SbomPackage::new(package, sbom_dependencies));
+
+        visited.insert(package);
+
         queue.append(&mut dependencies);
     }
 
-    result.into_iter().map(|d| d.into()).collect_vec()
+    result
 }
