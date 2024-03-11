@@ -73,3 +73,29 @@ fn build_sbom_project_bin_and_lib() {
             .count()
     );
 }
+
+#[cargo_test]
+fn build_sbom_with_simple_build_script() {
+    let p = configured_project()
+        .file(
+            "Cargo.toml",
+            r#"
+                [package]
+                name = "foo"
+                version = "0.0.1"
+                authors = []
+                build = "build.rs"
+            "#,
+        )
+        .file("src/main.rs", "#[cfg(foo)] fn main() {}")
+        .file(
+            "build.rs",
+            r#"fn main() { println!("cargo::rustc-cfg=foo"); }"#,
+        )
+        .build();
+
+    p.cargo("build").stream().run();
+
+    let path = p.bin("foo").with_extension("cargo-sbom.json");
+    assert!(path.is_file());
+}
