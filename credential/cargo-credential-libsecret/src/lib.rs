@@ -4,8 +4,8 @@ mod linux {
 
     use anyhow::Context;
     use cargo_credential::{
-        read_token, Action, CacheControl, Credential, CredentialResponse, Error, RegistryInfo,
-        Secret,
+        read_token, Action, CacheControl, Credential, CredentialResponse, Error, ErrorKind,
+        RegistryInfo, Secret,
     };
     use libloading::{Library, Symbol};
     use std::ffi::{CStr, CString};
@@ -115,10 +115,12 @@ mod linux {
             let secret_password_store_sync: Symbol<'_, SecretPasswordStoreSync>;
             let secret_password_clear_sync: Symbol<'_, SecretPasswordClearSync>;
             unsafe {
-                lib = Library::new("libsecret-1.so").context(
-                    "failed to load libsecret: try installing the `libsecret` \
+                lib = Library::new("libsecret-1.so")
+                    .context(
+                        "failed to load libsecret: try installing the `libsecret` \
                     or `libsecret-1-0` package with the system package manager",
-                )?;
+                    )
+                    .map_err(|err| Error::from(err).with_kind(ErrorKind::UrlNotSupported))?;
                 secret_password_lookup_sync = lib
                     .get(b"secret_password_lookup_sync\0")
                     .map_err(Box::new)?;
@@ -153,7 +155,7 @@ mod linux {
                             .into());
                         }
                         if token_c.is_null() {
-                            return Err(Error::NotFound);
+                            return Err(ErrorKind::NotFound.into());
                         }
                         let token = Secret::from(
                             CStr::from_ptr(token_c)
@@ -223,7 +225,7 @@ mod linux {
                     }
                     Ok(CredentialResponse::Logout)
                 }
-                _ => Err(Error::OperationNotSupported),
+                _ => Err(ErrorKind::OperationNotSupported.into()),
             }
         }
     }

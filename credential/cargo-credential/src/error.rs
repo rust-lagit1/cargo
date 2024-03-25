@@ -1,6 +1,8 @@
-use serde::{Deserialize, Serialize};
 use std::error::Error as StdError;
-use thiserror::Error as ThisError;
+
+use serde::{Deserialize, Serialize};
+
+type BoxError = Box<dyn StdError + Sync + Send>;
 
 /// Credential provider error type.
 ///
@@ -9,36 +11,62 @@ use thiserror::Error as ThisError;
 /// variants are fatal.
 ///
 /// Note: Do not add a tuple variant, as it cannot be serialized.
-#[derive(Serialize, Deserialize, ThisError, Debug)]
-#[serde(rename_all = "kebab-case", tag = "kind")]
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "kebab-case")]
 #[non_exhaustive]
-pub enum Error {
-    /// Registry URL is not supported. This should be used if
-    /// the provider only works for some registries. Cargo will
-    /// try another provider, if available
-    #[error("registry not supported")]
-    UrlNotSupported,
+pub struct Error {
+    kind: ErrorKind,
 
-    /// Credentials could not be found. Cargo will try another
-    /// provider, if available
-    #[error("credential not found")]
-    NotFound,
+    #[serde(flatten)]
+    inner: Option<SerdeBoxError>,
+}
 
-    /// The provider doesn't support this operation, such as
-    /// a provider that can't support 'login' / 'logout'
-    #[error("requested operation not supported")]
-    OperationNotSupported,
+impl Error {
+    pub fn other(inner: BoxError) -> Self {
+        Self {
+            kind: ErrorKind::Other,
+            inner: Some(SerdeBoxError(inner)),
+        }
+    }
 
-    /// The provider failed to perform the operation. Other
-    /// providers will not be attempted
-    #[error(transparent)]
-    #[serde(with = "error_serialize")]
-    Other(Box<dyn StdError + Sync + Send>),
+    pub fn with_kind(mut self, kind: ErrorKind) -> Self {
+        self.kind = kind;
+        self
+    }
 
-    /// A new variant was added to this enum since Cargo was built
-    #[error("unknown error kind; try updating Cargo?")]
-    #[serde(other)]
-    Unknown,
+    pub fn kind(&self) -> ErrorKind {
+        self.kind
+    }
+
+    pub fn as_inner(&self) -> Option<&(dyn StdError + Sync + Send)> {
+        use std::ops::Deref as _;
+        self.inner.as_ref().map(|e| e.0.deref())
+    }
+}
+
+impl StdError for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.inner.as_ref().and_then(|e| e.source())
+    }
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(inner) = self.inner.as_ref() {
+            inner.fmt(f)
+        } else {
+            self.kind.fmt(f)
+        }
+    }
+}
+
+impl From<ErrorKind> for Error {
+    fn from(kind: ErrorKind) -> Self {
+        Self {
+            kind: kind,
+            inner: None,
+        }
+    }
 }
 
 impl From<String> for Error {
@@ -59,20 +87,60 @@ impl From<&str> for Error {
 
 impl From<anyhow::Error> for Error {
     fn from(value: anyhow::Error) -> Self {
-        let mut prev = None;
-        for e in value.chain().rev() {
-            prev = Some(Box::new(StringTypedError {
-                message: e.to_string(),
-                source: prev,
-            }));
-        }
-        Error::Other(prev.unwrap())
+        Error::from(Box::new(StringTypedError::from(value)))
     }
 }
 
 impl<T: StdError + Send + Sync + 'static> From<Box<T>> for Error {
     fn from(value: Box<T>) -> Self {
-        Error::Other(value)
+        Error::other(value)
+    }
+}
+
+/// Credential provider error kind.
+///
+/// `UrlNotSupported` and `NotFound` errors both cause Cargo
+/// to attempt another provider, if one is available. The other
+/// variants are fatal.
+///
+/// Note: Do not add a tuple variant, as it cannot be serialized.
+#[derive(Copy, Clone, Serialize, Deserialize, Debug)]
+#[serde(rename_all = "kebab-case")]
+#[non_exhaustive]
+pub enum ErrorKind {
+    /// Registry URL is not supported. This should be used if
+    /// the provider only works for some registries. Cargo will
+    /// try another provider, if available
+    UrlNotSupported,
+
+    /// Credentials could not be found. Cargo will try another
+    /// provider, if available
+    NotFound,
+
+    /// The provider doesn't support this operation, such as
+    /// a provider that can't support 'login' / 'logout'
+    OperationNotSupported,
+
+    /// The provider failed to perform the operation. Other
+    /// providers will not be attempted
+    Other,
+
+    /// A new variant was added to this enum since Cargo was built
+    #[serde(other)]
+    Unknown,
+}
+
+impl StdError for ErrorKind {}
+
+impl std::fmt::Display for ErrorKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UrlNotSupported => f.write_str("registry not supported"),
+            Self::NotFound => f.write_str("credential not found"),
+            Self::OperationNotSupported => f.write_str("requested operation not supported"),
+            Self::Other => f.write_str("credential action failed"),
+            Self::Unknown => f.write_str("unknown error kind; try updating Cargo?"),
+        }
     }
 }
 
@@ -95,29 +163,35 @@ impl std::fmt::Display for StringTypedError {
     }
 }
 
-/// Serializer / deserializer for any boxed error.
-/// The string representation of the error, and its `source` chain can roundtrip across
-/// the serialization. The actual types are lost (downcast will not work).
-mod error_serialize {
-    use std::error::Error as StdError;
-    use std::ops::Deref;
+impl From<anyhow::Error> for StringTypedError {
+    fn from(value: anyhow::Error) -> Self {
+        let mut prev = None;
+        for e in value.chain().rev() {
+            prev = Some(StringTypedError {
+                message: e.to_string(),
+                source: prev.map(Box::new),
+            });
+        }
+        prev.unwrap()
+    }
+}
 
-    use serde::{ser::SerializeStruct, Deserialize, Deserializer, Serializer};
+#[derive(Debug)]
+struct SerdeBoxError(BoxError);
 
-    use crate::error::StringTypedError;
-
-    pub fn serialize<S>(
-        e: &Box<dyn StdError + Send + Sync>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
+impl Serialize for SerdeBoxError {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: Serializer,
+        S: serde::Serializer,
     {
+        use serde::ser::SerializeStruct;
+        use std::ops::Deref as _;
+
         let mut state = serializer.serialize_struct("StringTypedError", 2)?;
-        state.serialize_field("message", &format!("{}", e))?;
+        state.serialize_field("message", &format!("{}", self.0))?;
 
         // Serialize the source error chain recursively
-        let mut current_source: &dyn StdError = e.deref();
+        let mut current_source: &dyn StdError = self.0.deref();
         let mut sources = Vec::new();
         while let Some(err) = current_source.source() {
             sources.push(err.to_string());
@@ -126,51 +200,94 @@ mod error_serialize {
         state.serialize_field("caused-by", &sources)?;
         state.end()
     }
+}
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Box<dyn StdError + Sync + Send>, D::Error>
+impl<'de> Deserialize<'de> for SerdeBoxError {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: Deserializer<'de>,
+        D: serde::Deserializer<'de>,
     {
-        #[derive(Deserialize)]
-        #[serde(rename_all = "kebab-case")]
-        struct ErrorData {
-            message: String,
-            caused_by: Option<Vec<String>>,
-        }
-        let data = ErrorData::deserialize(deserializer)?;
-        let mut prev = None;
-        if let Some(source) = data.caused_by {
-            for e in source.into_iter().rev() {
-                prev = Some(Box::new(StringTypedError {
-                    message: e,
-                    source: prev,
-                }));
+        let data = error_serialize::ErrorData::deserialize(deserializer)?;
+        let e = SerdeBoxError(Box::new(StringTypedError::from(data)));
+        Ok(e)
+    }
+}
+
+impl StdError for SerdeBoxError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.0.source()
+    }
+}
+
+impl std::fmt::Display for SerdeBoxError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+/// Serializer / deserializer for any boxed error.
+/// The string representation of the error, and its `source` chain can roundtrip across
+/// the serialization. The actual types are lost (downcast will not work).
+mod error_serialize {
+    use serde::Deserialize;
+
+    use super::StringTypedError;
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "kebab-case")]
+    pub struct ErrorData {
+        message: String,
+        caused_by: Option<Vec<String>>,
+    }
+
+    impl From<ErrorData> for StringTypedError {
+        fn from(data: ErrorData) -> Self {
+            let mut prev = None;
+            if let Some(source) = data.caused_by {
+                for e in source.into_iter().rev() {
+                    prev = Some(Box::new(StringTypedError {
+                        message: e,
+                        source: prev,
+                    }));
+                }
+            }
+            StringTypedError {
+                message: data.message,
+                source: prev,
             }
         }
-        let e = Box::new(StringTypedError {
-            message: data.message,
-            source: prev,
-        });
-        Ok(e)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::Error;
+    use super::ErrorKind;
 
     #[test]
-    pub fn unknown_kind() {
+    fn not_supported_roundtrip() {
+        let input = Error::from(ErrorKind::UrlNotSupported);
+
+        let expected_json = r#"{"kind":"url-not-supported"}"#;
+        let actual_json = serde_json::to_string(&input).unwrap();
+        assert_eq!(actual_json, expected_json);
+
+        let actual: Error = serde_json::from_str(&actual_json).unwrap();
+        assert!(matches!(actual.kind(), ErrorKind::UrlNotSupported));
+    }
+
+    #[test]
+    fn deserialize_to_unknown_kind() {
         let json = r#"{
             "kind": "unexpected-kind",
             "unexpected-content": "test"
           }"#;
         let e: Error = serde_json::from_str(&json).unwrap();
-        assert!(matches!(e, Error::Unknown));
+        assert!(matches!(e.kind(), ErrorKind::Unknown));
     }
 
     #[test]
-    pub fn roundtrip() {
+    fn other_roundtrip() {
         // Construct an error with context
         let e = anyhow::anyhow!("E1").context("E2").context("E3");
         // Convert to a string with contexts.

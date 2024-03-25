@@ -513,6 +513,7 @@ fn credential_action(
     };
     let providers = credential_provider(gctx, sid, require_cred_provider_config, true)?;
     let mut any_not_found = false;
+    let mut custom_not_supported = None;
     for provider in providers {
         let args: Vec<&str> = provider
             .iter()
@@ -552,20 +553,37 @@ fn credential_action(
         })?;
         match provider.perform(&registry, &action, &args[1..]) {
             Ok(response) => return Ok(response),
-            Err(cargo_credential::Error::UrlNotSupported) => {}
-            Err(cargo_credential::Error::NotFound) => any_not_found = true,
-            e => {
-                return e.with_context(|| {
-                    format!(
-                        "credential provider `{}` failed action `{action}`",
-                        args.join(" ")
-                    )
-                })
-            }
+            Err(e) => match e.kind() {
+                cargo_credential::ErrorKind::UrlNotSupported => {
+                    if e.as_inner().is_some() {
+                        custom_not_supported.get_or_insert_with(|| {
+                            Err::<(), _>(e)
+                                .with_context(|| {
+                                    format!(
+                                        "credential provider `{}` could not handle the request",
+                                        args.join(" ")
+                                    )
+                                })
+                                .unwrap_err()
+                        });
+                    }
+                }
+                cargo_credential::ErrorKind::NotFound => any_not_found = true,
+                _ => {
+                    return Err(e).with_context(|| {
+                        format!(
+                            "credential provider `{}` failed action `{action}`",
+                            args.join(" ")
+                        )
+                    })
+                }
+            },
         }
     }
     if any_not_found {
-        Err(cargo_credential::Error::NotFound.into())
+        Err(cargo_credential::ErrorKind::NotFound.into())
+    } else if let Some(custom_not_supported) = custom_not_supported {
+        Err(custom_not_supported)
     } else {
         anyhow::bail!("no credential providers could handle the request")
     }
@@ -630,8 +648,12 @@ fn auth_token_optional(
         require_cred_provider_config,
     );
     if let Some(e) = credential_response.as_ref().err() {
-        if let Some(e) = e.downcast_ref::<cargo_credential::Error>() {
-            if matches!(e, cargo_credential::Error::NotFound) {
+        if let Some(e) = e
+            .downcast_ref::<cargo_credential::Error>()
+            .map(|e| e.kind())
+            .or_else(|| e.downcast_ref::<cargo_credential::ErrorKind>().copied())
+        {
+            if matches!(e, cargo_credential::ErrorKind::NotFound) {
                 return Ok(None);
             }
         }
@@ -669,8 +691,12 @@ fn auth_token_optional(
 pub fn logout(gctx: &GlobalContext, sid: &SourceId) -> CargoResult<()> {
     let credential_response = credential_action(gctx, sid, Action::Logout, vec![], &[], false);
     if let Some(e) = credential_response.as_ref().err() {
-        if let Some(e) = e.downcast_ref::<cargo_credential::Error>() {
-            if matches!(e, cargo_credential::Error::NotFound) {
+        if let Some(e) = e
+            .downcast_ref::<cargo_credential::Error>()
+            .map(|e| e.kind())
+            .or_else(|| e.downcast_ref::<cargo_credential::ErrorKind>().copied())
+        {
+            if matches!(e, cargo_credential::ErrorKind::NotFound) {
                 gctx.shell().status(
                     "Logout",
                     format!(
