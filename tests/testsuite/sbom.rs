@@ -1,6 +1,9 @@
 //! Tests for cargo-sbom precursor files.
 
-use cargo_test_support::{basic_bin_manifest, cargo_test, project, ProjectBuilder};
+use cargo_test_support::basic_bin_manifest;
+use cargo_test_support::cargo_test;
+use cargo_test_support::project;
+use cargo_test_support::ProjectBuilder;
 
 fn configured_project() -> ProjectBuilder {
     project().file(
@@ -13,15 +16,29 @@ fn configured_project() -> ProjectBuilder {
 }
 
 #[cargo_test]
-fn build_sbom_using_cargo_config() {
-    let p = project()
-        .file(
-            ".cargo/config.toml",
-            r#"
-                [build]
-                sbom = true
-            "#,
+fn build_sbom_without_passing_unstable_flag() {
+    let p = configured_project()
+        .file("Cargo.toml", &basic_bin_manifest("foo"))
+        .file("src/main.rs", r#"fn main() {}"#)
+        .build();
+
+    p.cargo("build")
+        .masquerade_as_nightly_cargo(&["sbom"])
+        .with_stderr_data(
+            "\
+            warning: ignoring 'sbom' config, pass `-Zsbom` to enable it\n\
+            [COMPILING] foo v0.5.0 ([..])\n\
+            [FINISHED] `dev` profile [unoptimized + debuginfo] target(s) in [..]\n",
         )
+        .run();
+
+    let file = p.bin("foo").with_extension("cargo-sbom.json");
+    assert!(!file.exists());
+}
+
+#[cargo_test]
+fn build_sbom_using_cargo_config() {
+    let p = configured_project()
         .file("Cargo.toml", &basic_bin_manifest("foo"))
         .file("src/main.rs", r#"fn main() {}"#)
         .build();
@@ -147,6 +164,7 @@ fn build_sbom_with_build_dependencies() {
     p.cargo("build -Zsbom")
         .masquerade_as_nightly_cargo(&["sbom"])
         .run();
+
     let path = p.bin("foo").with_extension("cargo-sbom.json");
     assert!(path.is_file());
 }
