@@ -68,12 +68,30 @@ struct State<'gctx> {
     throttle: Throttle,
     last_line: Option<String>,
     fixed_width: Option<usize>,
+    last_progress: u8,
 }
 
 struct Format {
     style: ProgressStyle,
     max_width: usize,
     max_print: usize,
+}
+
+enum TaskbarProgress {
+    None,
+    Value(u8),
+    Error,
+}
+
+impl std::fmt::Display for TaskbarProgress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (state, progress) = match self {
+            Self::None => (0, 0),
+            Self::Value(v) => (1, *v),
+            Self::Error => (2, 0),
+        };
+        write!(f, "\x1b]9;4;{state};{progress}\x1b\\")
+    }
 }
 
 impl<'gctx> Progress<'gctx> {
@@ -132,6 +150,7 @@ impl<'gctx> Progress<'gctx> {
                 throttle: Throttle::new(),
                 last_line: None,
                 fixed_width: progress_config.width,
+                last_progress: u8::MAX,
             }),
         }
     }
@@ -269,6 +288,7 @@ impl Throttle {
 impl<'gctx> State<'gctx> {
     fn tick(&mut self, cur: usize, max: usize, msg: &str) -> CargoResult<()> {
         if self.done {
+            write!(self.gctx.shell().err(), "{}", TaskbarProgress::None)?;
             return Ok(());
         }
 
@@ -280,6 +300,15 @@ impl<'gctx> State<'gctx> {
         // return back to the beginning of the line for the next print.
         self.try_update_max_width();
         if let Some(pbar) = self.format.progress(cur, max) {
+            let percent = ((cur as f32) / (max as f32) * 100.0) as u8;
+            if self.last_progress != percent {
+                write!(
+                    self.gctx.shell().err(),
+                    "{}",
+                    TaskbarProgress::Value(percent)
+                )?;
+                self.last_progress = percent;
+            }
             self.print(&pbar, msg)?;
         }
         Ok(())
@@ -318,6 +347,8 @@ impl<'gctx> State<'gctx> {
         if self.last_line.is_some() && !self.gctx.shell().is_cleared() {
             self.gctx.shell().err_erase_line();
             self.last_line = None;
+            let _ = write!(self.gctx.shell().err(), "{}", TaskbarProgress::None);
+            self.last_progress = u8::MAX;
         }
     }
 
