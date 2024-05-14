@@ -68,7 +68,6 @@ struct State<'gctx> {
     throttle: Throttle,
     last_line: Option<String>,
     fixed_width: Option<usize>,
-    last_progress: u8,
 }
 
 struct Format {
@@ -150,7 +149,6 @@ impl<'gctx> Progress<'gctx> {
                 throttle: Throttle::new(),
                 last_line: None,
                 fixed_width: progress_config.width,
-                last_progress: u8::MAX,
             }),
         }
     }
@@ -301,14 +299,11 @@ impl<'gctx> State<'gctx> {
         self.try_update_max_width();
         if let Some(pbar) = self.format.progress(cur, max) {
             let percent = ((cur as f32) / (max as f32) * 100.0) as u8;
-            if self.last_progress != percent {
-                write!(
-                    self.gctx.shell().err(),
-                    "{}",
-                    TaskbarProgress::Value(percent)
-                )?;
-                self.last_progress = percent;
-            }
+            write!(
+                self.gctx.shell().err(),
+                "{}",
+                TaskbarProgress::Value(percent)
+            )?;
             self.print(&pbar, msg)?;
         }
         Ok(())
@@ -343,12 +338,12 @@ impl<'gctx> State<'gctx> {
     }
 
     fn clear(&mut self) {
+        // Always clear the taskbar progress
+        let _ = write!(self.gctx.shell().err(), "{}", TaskbarProgress::None);
         // No need to clear if the progress is not currently being displayed.
         if self.last_line.is_some() && !self.gctx.shell().is_cleared() {
             self.gctx.shell().err_erase_line();
             self.last_line = None;
-            let _ = write!(self.gctx.shell().err(), "{}", TaskbarProgress::None);
-            self.last_progress = u8::MAX;
         }
     }
 
