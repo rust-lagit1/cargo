@@ -240,7 +240,8 @@ impl<'gctx> Progress<'gctx> {
     /// calling it too often.
     pub fn print_now(&mut self, msg: &str) -> CargoResult<()> {
         match &mut self.state {
-            Some(s) => s.print("", msg),
+            // TODO: figure our the correct data here
+            Some(s) => s.print("", msg, 30),
             None => Ok(()),
         }
     }
@@ -299,17 +300,12 @@ impl<'gctx> State<'gctx> {
         self.try_update_max_width();
         if let Some(pbar) = self.format.progress(cur, max) {
             let percent = ((cur as f32) / (max as f32) * 100.0) as u8;
-            write!(
-                self.gctx.shell().err(),
-                "{}",
-                TaskbarProgress::Value(percent)
-            )?;
-            self.print(&pbar, msg)?;
+            self.print(&pbar, msg, percent)?;
         }
         Ok(())
     }
 
-    fn print(&mut self, prefix: &str, msg: &str) -> CargoResult<()> {
+    fn print(&mut self, prefix: &str, msg: &str, percent: u8) -> CargoResult<()> {
         self.throttle.update();
         self.try_update_max_width();
 
@@ -329,7 +325,7 @@ impl<'gctx> State<'gctx> {
             let mut shell = self.gctx.shell();
             shell.set_needs_clear(false);
             shell.status_header(&self.name)?;
-            write!(shell.err(), "{}\r", line)?;
+            write!(shell.err(), "{}{}\r", line, TaskbarProgress::Value(percent))?;
             self.last_line = Some(line);
             shell.set_needs_clear(true);
         }
