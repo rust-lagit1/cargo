@@ -353,7 +353,7 @@ impl<'a> UnitGenerator<'a, '_> {
                 }
             }
             CompileFilter::Only {
-                all_targets,
+                all_targets: _,
                 ref lib,
                 ref bins,
                 ref examples,
@@ -374,21 +374,6 @@ impl<'a> UnitGenerator<'a, '_> {
                   ))?;
                         } else {
                             libs.push(proposal)
-                        }
-                    }
-                    if !all_targets && libs.is_empty() && *lib == LibRule::True {
-                        let names = self
-                            .packages
-                            .iter()
-                            .map(|pkg| pkg.name())
-                            .collect::<Vec<_>>();
-                        if names.len() == 1 {
-                            anyhow::bail!("no library targets found in package `{}`", names[0]);
-                        } else {
-                            anyhow::bail!(
-                                "no library targets found in packages: {}",
-                                names.join(", ")
-                            );
                         }
                     }
                     proposals.extend(libs);
@@ -514,7 +499,7 @@ Rustdoc did not scrape the following examples because they require dev-dependenc
         let mut shell = self.ws.gctx().shell();
         if let CompileFilter::Only {
             all_targets,
-            lib: _,
+            ref lib,
             ref bins,
             ref examples,
             ref tests,
@@ -525,16 +510,19 @@ Rustdoc did not scrape the following examples because they require dev-dependenc
                 let mut filters = String::new();
                 let mut miss_count = 0;
 
-                let mut append = |t: &FilterRule, s| {
-                    if let FilterRule::All = *t {
-                        miss_count += 1;
-                        filters.push_str(s);
-                    }
-                };
-
                 if all_targets {
                     filters.push_str(" `all-targets`");
                 } else {
+                    if *lib == LibRule::True {
+                        miss_count += 1;
+                        filters.push_str(" `lib`,");
+                    }
+                    let mut append = |t: &FilterRule, s| {
+                        if let FilterRule::All = *t {
+                            miss_count += 1;
+                            filters.push_str(s);
+                        }
+                    };
                     append(bins, " `bins`,");
                     append(tests, " `tests`,");
                     append(examples, " `examples`,");
