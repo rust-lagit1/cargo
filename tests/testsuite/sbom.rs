@@ -612,3 +612,212 @@ fn build_sbom_with_build_dependencies() {
         }"#,
     );
 }
+
+#[cargo_test]
+fn build_sbom_crate_uses_different_features_for_build_and_normal_dependencies() {
+    let p = configured_project()
+        .file(
+            "Cargo.toml",
+            r#"
+                [package]
+                name = "a"
+                version = "0.1.0"
+                edition = "2021"
+                authors = []
+
+                [dependencies]
+                b = { path = "b/", features = ["f1"] }
+
+                [build-dependencies]
+                b = { path = "b/", features = ["f2"] }
+            "#,
+        )
+        .file(
+            "src/main.rs",
+            r#"
+                fn main() { b::f1(); }
+            "#,
+        )
+        .file(
+            "build.rs",
+            r#"
+                fn main() { b::f2(); }
+            "#,
+        )
+        .file(
+            "b/Cargo.toml",
+            r#"
+                [package]
+                name = "b"
+                version = "0.0.1"
+                edition = "2021"
+
+                [features]
+                f1 = []
+                f2 = []
+            "#,
+        )
+        .file(
+            "b/src/lib.rs",
+            r#"
+                #[cfg(feature = "f1")]
+                pub fn f1() {}
+
+                #[cfg(feature = "f2")]
+                pub fn f2() {}
+            "#,
+        )
+        .build();
+
+    p.cargo("build -Zsbom")
+        .masquerade_as_nightly_cargo(&["sbom"])
+        .run();
+
+    let path = with_sbom_suffix(&p.bin("a"));
+    assert!(path.is_file());
+
+    assert_json_output(
+        path,
+        r#"
+        {
+            "features": [],
+            "format_version": 1,
+            "package_id": "path+file:///[..]#a@0.1.0",
+            "name": "a",
+            "version": "0.1.0",
+            "source": "[ROOT]/foo",
+            "target": {
+                "crate_types": [
+                    "bin"
+                ],
+                "edition": "2021",
+                "kind": [
+                    "bin"
+                ],
+                "name": "a"
+            },
+            "packages": [
+                {
+                    "build_type": "build",
+                    "dependencies": [
+                        {
+                            "features": [],
+                            "name": "a",
+                            "package_id": "path+file:///[..]#a@0.1.0",
+                            "version": "0.1.0"
+                        }
+                    ],
+                    "extern_crate_name": "build_script_build",
+                    "features": [],
+                    "package": "a",
+                    "package_id": "path+file:///[..]#a@0.1.0",
+                    "profile": {
+                        "codegen_backend": null,
+                        "codegen_units": null,
+                        "debug_assertions": false,
+                        "debuginfo": 2,
+                        "incremental": false,
+                        "lto": "false",
+                        "name": "dev",
+                        "opt_level": "0",
+                        "overflow_checks": false,
+                        "panic": "unwind",
+                        "rpath": false,
+                        "split_debuginfo": null
+                    },
+                    "version": "0.1.0"
+                },
+                {
+                    "build_type": "normal",
+                    "dependencies": [
+                        {
+                            "features": [
+                                "f2"
+                            ],
+                            "name": "b",
+                            "package_id": "path+file:///[..]b#0.0.1",
+                            "version": "0.0.1"
+                        }
+                    ],
+                    "extern_crate_name": "build_script_build",
+                    "features": [],
+                    "package": "a",
+                    "package_id": "path+file:///[..]#a@0.1.0",
+                    "profile": {
+                        "codegen_backend": null,
+                        "codegen_units": null,
+                        "debug_assertions": true,
+                        "debuginfo": 0,
+                        "incremental": false,
+                        "lto": "false",
+                        "name": "dev",
+                        "opt_level": "0",
+                        "overflow_checks": true,
+                        "panic": "unwind",
+                        "rpath": false,
+                        "split_debuginfo": "{...}"
+                    },
+                    "version": "0.1.0"
+                },
+                {
+                    "build_type": "normal",
+                    "dependencies": [],
+                    "extern_crate_name": "b",
+                    "features": [
+                        "f2"
+                    ],
+                    "package": "b",
+                    "package_id": "path+file:///[..]b#0.0.1",
+                    "profile": {
+                        "codegen_backend": null,
+                        "codegen_units": null,
+                        "debug_assertions": true,
+                        "debuginfo": 0,
+                        "incremental": false,
+                        "lto": "false",
+                        "name": "dev",
+                        "opt_level": "0",
+                        "overflow_checks": true,
+                        "panic": "unwind",
+                        "rpath": false,
+                        "split_debuginfo": "{...}"
+                    },
+                    "version": "0.0.1"
+                },
+                {
+                    "build_type": "normal",
+                    "dependencies": [],
+                    "extern_crate_name": "b",
+                    "features": [
+                        "f1"
+                    ],
+                    "package": "b",
+                    "package_id": "path+file:///[..]b#0.0.1",
+                    "version": "0.0.1"
+                }
+            ],
+            "profile": {
+                "codegen_backend": null,
+                "codegen_units": null,
+                "debug_assertions": true,
+                "debuginfo": 2,
+                "incremental": false,
+                "lto": "false",
+                "name": "dev",
+                "opt_level": "0",
+                "overflow_checks": true,
+                "panic": "unwind",
+                "rpath": false,
+                "split_debuginfo": "{...}"
+            },
+            "rustc": {
+              "commit_hash": "[..]",
+              "host": "[..]",
+              "verbose_version": "{...}",
+              "version": "[..]",
+              "workspace_wrapper": null,
+              "wrapper": null
+            }
+        }"#,
+    );
+}
