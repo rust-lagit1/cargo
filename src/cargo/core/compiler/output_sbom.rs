@@ -117,10 +117,13 @@ impl From<&Profile> for SbomProfile {
     }
 }
 
+/// Describes a package dependency
 #[derive(Serialize, Clone, Debug)]
 struct SbomPackage {
     package_id: PackageIdSpec,
     package: String,
+    /// Package profile is given when it differs from the root level [`Profile`].
+    #[serde(skip_serializing_if = "Option::is_none")]
     profile: Option<SbomProfile>,
     version: Option<Version>,
     features: Vec<String>,
