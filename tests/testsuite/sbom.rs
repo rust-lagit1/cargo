@@ -105,10 +105,7 @@ fn build_sbom_using_cargo_config() {
                 "overflow_checks": true,
                 "rpath": false,
                 "incremental": false,
-                "panic": "unwind",
-                "strip": {
-                    "deferred": "None"
-                }
+                "panic": "unwind"
             },
             "packages": [],
             "features": [],
@@ -273,10 +270,7 @@ fn build_sbom_with_multiple_crate_types() {
                 "overflow_checks": true,
                 "rpath": false,
                 "incremental": false,
-                "panic": "unwind",
-                "strip": {
-                    "deferred": "None"
-                }
+                "panic": "unwind"
             },
             "packages": [],
             "features": [],
@@ -354,10 +348,7 @@ fn build_sbom_with_simple_build_script() {
                 "overflow_checks": true,
                 "rpath": false,
                 "incremental": false,
-                "panic": "unwind",
-                "strip": {
-                    "deferred": "None"
-                }
+                "panic": "unwind"
             },
             "packages": [
                 {
@@ -386,10 +377,7 @@ fn build_sbom_with_simple_build_script() {
                         "overflow_checks": false,
                         "panic": "unwind",
                         "rpath": false,
-                        "split_debuginfo": null,
-                        "strip": {
-                            "deferred": "None"
-                        }
+                        "split_debuginfo": null
                     },
                     "version": "0.0.1"
                 },
@@ -413,10 +401,7 @@ fn build_sbom_with_simple_build_script() {
                         "overflow_checks": true,
                         "panic": "unwind",
                         "rpath": false,
-                        "split_debuginfo": "{...}",
-                        "strip": {
-                            "deferred": "None"
-                        }
+                        "split_debuginfo": "{...}"
                     }
                 }
             ],
@@ -512,10 +497,7 @@ fn build_sbom_with_build_dependencies() {
                 "overflow_checks": true,
                 "rpath": false,
                 "incremental": false,
-                "panic": "unwind",
-                "strip": {
-                    "deferred": "None"
-                }
+                "panic": "unwind"
             },
             "packages": [
                 {
@@ -561,10 +543,7 @@ fn build_sbom_with_build_dependencies() {
                         "overflow_checks": false,
                         "panic": "unwind",
                         "rpath": false,
-                        "split_debuginfo": "{...}",
-                        "strip": {
-                            "deferred": "None"
-                        }
+                        "split_debuginfo": "{...}"
                     }
                 },
                 {
@@ -594,10 +573,7 @@ fn build_sbom_with_build_dependencies() {
                         "overflow_checks": true,
                         "panic": "unwind",
                         "rpath": false,
-                        "split_debuginfo": "{...}",
-                        "strip": {
-                            "deferred": "None"
-                        }
+                        "split_debuginfo": "{...}"
                     }
                 },
                 {
@@ -620,10 +596,7 @@ fn build_sbom_with_build_dependencies() {
                         "overflow_checks": true,
                         "panic": "unwind",
                         "rpath": false,
-                        "split_debuginfo": "{...}",
-                        "strip": {
-                            "deferred": "None"
-                        }
+                        "split_debuginfo": "{...}"
                     }
                 }
             ],

@@ -11,7 +11,7 @@ use itertools::Itertools;
 use semver::Version;
 use serde::Serialize;
 
-use crate::core::profiles::Profile;
+use crate::core::profiles::{DebugInfo, Lto, Profile};
 use crate::core::{Target, TargetKind};
 use crate::util::Rustc;
 use crate::CargoResult;
@@ -69,14 +69,59 @@ impl From<&UnitDep> for SbomDependency {
     }
 }
 
+/// A profile can be overriden for individual packages.
+///
+/// This wraps a [`Profile`] object.
+/// See <https://doc.rust-lang.org/nightly/cargo/reference/profiles.html#overrides>
+#[derive(Serialize, Clone, Debug)]
+struct SbomProfile {
+    name: String,
+    opt_level: String,
+    lto: Lto,
+    codegen_backend: Option<String>,
+    codegen_units: Option<u32>,
+    debuginfo: DebugInfo,
+    split_debuginfo: Option<String>,
+    debug_assertions: bool,
+    overflow_checks: bool,
+    rpath: bool,
+    incremental: bool,
+    panic: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")] // remove when `rustflags` is stablized
+    rustflags: Vec<String>,
+}
+
+impl From<&Profile> for SbomProfile {
+    fn from(profile: &Profile) -> Self {
+        let rustflags = profile
+            .rustflags
+            .iter()
+            .map(|x| x.to_string())
+            .collect_vec();
+
+        Self {
+            name: profile.name.to_string(),
+            opt_level: profile.opt_level.to_string(),
+            lto: profile.lto,
+            codegen_backend: profile.codegen_backend.map(|x| x.to_string()),
+            codegen_units: profile.codegen_units.clone(),
+            debuginfo: profile.debuginfo.clone(),
+            split_debuginfo: profile.split_debuginfo.map(|x| x.to_string()),
+            debug_assertions: profile.debug_assertions,
+            overflow_checks: profile.overflow_checks,
+            rpath: profile.rpath,
+            incremental: profile.incremental,
+            panic: profile.panic.to_string(),
+            rustflags,
+        }
+    }
+}
+
 #[derive(Serialize, Clone, Debug)]
 struct SbomPackage {
     package_id: PackageIdSpec,
     package: String,
-    /// A profile can be overriden for individual packages
-    ///
-    /// See <https://doc.rust-lang.org/nightly/cargo/reference/profiles.html#overrides>
-    profile: Option<Profile>,
+    profile: Option<SbomProfile>,
     version: Option<Version>,
     features: Vec<String>,
     build_type: SbomBuildType,
@@ -94,7 +139,7 @@ impl SbomPackage {
         let package_id = dep.unit.pkg.package_id().to_spec();
         let package = package_id.name().to_string();
         let profile = if &dep.unit.profile != root_profile {
-            Some(dep.unit.profile.clone())
+            Some((&dep.unit.profile).into())
         } else {
             None
         };
@@ -169,7 +214,7 @@ struct Sbom {
     version: String,
     source: String,
     target: SbomTarget,
-    profile: Profile,
+    profile: SbomProfile,
     packages: Vec<SbomPackage>,
     features: Vec<String>,
     rustc: SbomRustc,
@@ -182,7 +227,7 @@ impl Sbom {
         let version = unit.pkg.version().to_string();
         let source = unit.pkg.package_id().source_id().to_string();
         let target = (&unit.target).into();
-        let profile = unit.profile.clone();
+        let profile = (&unit.profile).into();
         let features = unit.features.iter().map(|f| f.to_string()).collect();
 
         Self {
