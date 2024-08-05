@@ -353,14 +353,7 @@ fn build_sbom_with_simple_build_script() {
             "packages": [
                 {
                     "build_type": "build",
-                    "dependencies": [
-                        {
-                            "features": [],
-                            "name": "foo",
-                            "package_id": "path+file://[..]/foo#0.0.1",
-                            "version": "0.0.1"
-                        }
-                    ],
+                    "dependencies": [],
                     "extern_crate_name": "build_script_build",
                     "features": [],
                     "package": "foo",
@@ -388,7 +381,7 @@ fn build_sbom_with_simple_build_script() {
                     "features": [],
                     "build_type": "normal",
                     "extern_crate_name": "build_script_build",
-                    "dependencies": [],
+                    "dependencies": [0],
                     "profile": {
                         "codegen_backend": null,
                         "codegen_units": null,
@@ -507,14 +500,7 @@ fn build_sbom_with_build_dependencies() {
                     "features": [],
                     "build_type": "normal",
                     "extern_crate_name": "bar",
-                    "dependencies": [
-                        {
-                            "name": "bar",
-                            "package_id": "registry+[..]#bar@0.1.0",
-                            "version": "0.1.0",
-                            "features": []
-                        }
-                    ]
+                    "dependencies": [2]
                 },
                 {
                     "package_id": "registry+[..]#bar@0.1.0",
@@ -523,14 +509,7 @@ fn build_sbom_with_build_dependencies() {
                     "features": [],
                     "build_type": "build",
                     "extern_crate_name": "build_script_build",
-                    "dependencies": [
-                        {
-                            "name": "bar",
-                            "package_id": "registry+[..]#bar@0.1.0",
-                            "version": "0.1.0",
-                            "features": []
-                        }
-                    ],
+                    "dependencies": [3],
                     "profile": {
                         "codegen_backend": null,
                         "codegen_units": null,
@@ -553,14 +532,7 @@ fn build_sbom_with_build_dependencies() {
                     "features": [],
                     "build_type": "normal",
                     "extern_crate_name": "build_script_build",
-                    "dependencies": [
-                        {
-                            "name": "baz",
-                            "package_id": "registry+[..]#baz@0.1.0",
-                            "version": "0.1.0",
-                            "features": []
-                        }
-                    ],
+                    "dependencies": [1],
                     "profile": {
                         "codegen_backend": null,
                         "codegen_units": null,
@@ -699,14 +671,7 @@ fn build_sbom_crate_uses_different_features_for_build_and_normal_dependencies() 
             "packages": [
                 {
                     "build_type": "build",
-                    "dependencies": [
-                        {
-                            "features": [],
-                            "name": "a",
-                            "package_id": "path+file:///[..]#a@0.1.0",
-                            "version": "0.1.0"
-                        }
-                    ],
+                    "dependencies": [2],
                     "extern_crate_name": "build_script_build",
                     "features": [],
                     "package": "a",
@@ -729,16 +694,7 @@ fn build_sbom_crate_uses_different_features_for_build_and_normal_dependencies() 
                 },
                 {
                     "build_type": "normal",
-                    "dependencies": [
-                        {
-                            "features": [
-                                "f2"
-                            ],
-                            "name": "b",
-                            "package_id": "path+file:///[..]b#0.0.1",
-                            "version": "0.0.1"
-                        }
-                    ],
+                    "dependencies": [0],
                     "extern_crate_name": "build_script_build",
                     "features": [],
                     "package": "a",

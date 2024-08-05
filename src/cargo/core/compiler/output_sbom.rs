@@ -39,36 +39,6 @@ impl<const V: u32> Serialize for SbomFormatVersion<V> {
     }
 }
 
-/// A package dependency
-#[derive(Serialize, Clone, Debug)]
-struct SbomDependency {
-    name: String,
-    package_id: PackageIdSpec,
-    version: Option<Version>,
-    features: Vec<String>,
-}
-
-impl From<&UnitDep> for SbomDependency {
-    fn from(dep: &UnitDep) -> Self {
-        let package_id = dep.unit.pkg.package_id().to_spec();
-        let name = package_id.name().to_string();
-        let version = package_id.version();
-        let features = dep
-            .unit
-            .features
-            .iter()
-            .map(|f| f.to_string())
-            .collect_vec();
-
-        Self {
-            name,
-            package_id,
-            version,
-            features,
-        }
-    }
-}
-
 /// A profile can be overriden for individual packages.
 ///
 /// This wraps a [`Profile`] object.
@@ -129,25 +99,27 @@ struct SbomPackage {
     features: Vec<String>,
     build_type: SbomBuildType,
     extern_crate_name: String,
-    dependencies: Vec<SbomDependency>,
+    /// Indices into the `packages` array
+    dependencies: Vec<usize>,
 }
 
 impl SbomPackage {
-    pub fn new(
-        dep: &UnitDep,
-        dependencies: Vec<SbomDependency>,
-        build_type: SbomBuildType,
-        root_profile: &Profile,
-    ) -> Self {
-        let package_id = dep.unit.pkg.package_id().to_spec();
+    pub fn new(unit_dep: &UnitDep, root_profile: &Profile) -> Self {
+        let package_id = unit_dep.unit.pkg.package_id().to_spec();
         let package = package_id.name().to_string();
-        let profile = if &dep.unit.profile != root_profile {
-            Some((&dep.unit.profile).into())
+        let profile = if &unit_dep.unit.profile != root_profile {
+            Some((&unit_dep.unit.profile).into())
         } else {
             None
         };
+        let build_type = if unit_dep.unit.mode.is_run_custom_build() {
+            SbomBuildType::Build
+        } else {
+            SbomBuildType::Normal
+        };
+
         let version = package_id.version();
-        let features = dep
+        let features = unit_dep
             .unit
             .features
             .iter()
@@ -161,8 +133,8 @@ impl SbomPackage {
             version,
             features,
             build_type,
-            extern_crate_name: dep.extern_crate_name.to_string(),
-            dependencies,
+            extern_crate_name: unit_dep.extern_crate_name.to_string(),
+            dependencies: Vec::new(),
         }
     }
 }
@@ -267,41 +239,54 @@ pub fn output_sbom(build_runner: &mut BuildRunner<'_, '_>, unit: &Unit) -> Cargo
 }
 
 /// Fetch all dependencies, including transitive ones. A dependency can also appear multiple times
-/// if it's included with different versions.
+/// if it's using different settings, e.g. profile, features or crate versions.
+///
+/// A package's `dependencies` is a list of indices into the `packages` array.
 fn collect_packages(build_runner: &mut BuildRunner<'_, '_>, unit: &Unit) -> Vec<SbomPackage> {
     let unit_graph = &build_runner.bcx.unit_graph;
     let root_deps = build_runner.unit_deps(unit);
     let root_profile = &unit.profile;
 
-    let mut result = Vec::new();
+    let mut packages = Vec::new();
     let mut queue: BTreeSet<&UnitDep> = root_deps.iter().collect();
-    let mut visited = BTreeSet::new();
+    let mut visited_dependencies = BTreeSet::new();
 
-    while let Some(package) = queue.pop_first() {
-        if visited.contains(package) {
+    // each package should appear only once in the `packages` block
+    while let Some(dependency) = queue.pop_first() {
+        if visited_dependencies.contains(dependency) {
             continue;
         }
 
-        let build_type = if package.unit.mode.is_run_custom_build() {
-            SbomBuildType::Build
-        } else {
-            SbomBuildType::Normal
-        };
+        let mut dependencies: BTreeSet<&UnitDep> = unit_graph[&dependency.unit].iter().collect();
 
-        let mut dependencies: BTreeSet<&UnitDep> = unit_graph[&package.unit].iter().collect();
-        let sbom_dependencies = dependencies.iter().map(|dep| (*dep).into()).collect_vec();
+        // each seen package is returned
+        packages.push(SbomPackage::new(dependency, root_profile));
 
-        result.push(SbomPackage::new(
-            package,
-            sbom_dependencies,
-            build_type,
-            root_profile,
-        ));
-
-        visited.insert(package);
-
+        // append dependencies to back of queue
         queue.append(&mut dependencies);
+        visited_dependencies.insert(dependency);
     }
 
-    result
+    // Collect all indices for each package's dependencies
+    //
+    // At this point `visited_packages` contains the [`UnitDep`] the `packages` Vec is generated with.
+    // They have the same number of objects in the same order, therefore using an index is fine.
+    for (index, package) in visited_dependencies.iter().enumerate() {
+        let dependencies: BTreeSet<&UnitDep> = unit_graph[&package.unit].iter().collect();
+
+        let mut indices = dependencies
+            .iter()
+            .filter_map(|dep| {
+                visited_dependencies
+                    .iter()
+                    .position(|unit_dep| dep == unit_dep)
+            })
+            .collect::<Vec<_>>();
+
+        if let Some(package) = packages.get_mut(index) {
+            package.dependencies.append(&mut indices);
+        }
+    }
+
+    packages
 }
