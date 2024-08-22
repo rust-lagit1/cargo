@@ -11,24 +11,24 @@ Cargo [package][def-package]:
 │   ├── lib.rs
 │   ├── main.rs
 │   └── bin/
-│       ├── named_executable.rs
-│       ├── another_executable.rs
-│       └── multi_file_executable/
+│       ├── named-executable.rs
+│       ├── another-executable.rs
+│       └── multi-file-executable/
 │           ├── main.rs
 │           └── some_module.rs
 ├── benches/
-│   ├── large_input.rs
-│   └── multi_file_bench/
+│   ├── large-input.rs
+│   └── multi-file-bench/
 │       ├── main.rs
 │       └── bench_module.rs
 ├── examples/
 │   ├── simple.rs
-│   └── multi_file_example/
+│   └── multi-file-example/
 │       ├── main.rs
 │       └── ex_module.rs
 └── tests/
-    ├── some_integration_tests.rs
-    └── multi_file_test/
+    ├── some-integration-tests.rs
+    └── multi-file-test/
         ├── main.rs
         └── test_module.rs
 ```
