@@ -181,9 +181,13 @@ impl GitDatabase {
             .filter(|co| co.is_fresh())
         {
             Some(co) => co,
-            None => GitCheckout::clone_into(dest, self, rev, gctx)?,
+            None => {
+                let checkout = GitCheckout::clone_into(dest, self, rev, gctx)?;
+                checkout.update_submodules(gctx)?;
+                checkout
+            }
         };
-        checkout.update_submodules(gctx)?;
+
         Ok(checkout)
     }
 
