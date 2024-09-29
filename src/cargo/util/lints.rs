@@ -655,12 +655,19 @@ pub fn unexpected_target_cfgs(
         return Ok(());
     };
 
-    if !global_check_cfg.exhaustive {
+    // If we have extra `--check-cfg` args comming from the lints config, we need to
+    // refetch the `--print=check-cfg` with those extra args.
+    let lint_rustflags = pkg.manifest().lint_rustflags();
+    let check_cfg = if lint_rustflags.iter().any(|a| a == "--check-cfg") {
+        Some(target_info.check_cfg_with_extra_args(gctx, &rustc, lint_rustflags)?)
+    } else {
+        None
+    };
+    let check_cfg = check_cfg.as_ref().unwrap_or(&global_check_cfg);
+
+    if !check_cfg.exhaustive {
         return Ok(());
     }
-
-    // FIXME: If the `[lints.rust.unexpected_cfgs.check-cfg]` config is set we should
-    // re-fetch the check-cfg informations with those extra args
 
     let manifest_path = rel_cwd_manifest_path(path, gctx);
 
@@ -673,7 +680,7 @@ pub fn unexpected_target_cfgs(
                 Cfg::Name(name) => (name, None),
                 Cfg::KeyPair(name, value) => (name, Some(value.to_string())),
             };
-            if let Some(title) = match global_check_cfg.expecteds.get(name) {
+            if let Some(title) = match check_cfg.expecteds.get(name) {
                 Some(ExpectedValues::Some(values)) if !values.contains(&value) => {
                     let value = match value {
                         Some(ref value) => Cow::from(format!("`{value}`")),
