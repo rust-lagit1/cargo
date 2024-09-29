@@ -68,6 +68,7 @@ struct State<'gctx> {
     throttle: Throttle,
     last_line: Option<String>,
     fixed_width: Option<usize>,
+    taskbar: TaskbarProgress,
 }
 
 struct Format {
@@ -76,18 +77,71 @@ struct Format {
     max_print: usize,
 }
 
-enum TaskbarProgress {
-    None,
-    Value(u8),
-    Error,
+/// Taskbar progressbar
+///
+/// Outputs ANSI codes according to the `Operating system commands`.
+/// Currently only works in the Windows Terminal and ConEmu.
+struct TaskbarProgress {
+    show: bool,
+    pub percent: u8,
 }
 
-impl std::fmt::Display for TaskbarProgress {
+impl TaskbarProgress {
+    /// Creates a new `TaskbarProgress` from a cargo's config system.
+    ///
+    /// * `config == None` enables taskbar progress reporting on Windows 
+    /// by default and disables on other platforms
+    fn from_config(config: Option<bool>) -> Self {
+        let show = match config {
+            Some(v) => v,
+            None => cfg!(target_os = "windows"),
+        };
+
+        TaskbarProgress { show, percent: 0 }
+    }
+
+    /// Removes a progress bar from taskbar
+    pub fn remove(&self) -> TaskbarValue {
+        if self.show {
+            TaskbarValue::Remove
+        } else {
+            TaskbarValue::None
+        }
+    }
+
+    /// Shows a value from a `percent` field
+    pub fn value(&self) -> TaskbarValue {
+        if self.show {
+            TaskbarValue::Value(self.percent)
+        } else {
+            TaskbarValue::None
+        }
+    }
+}
+
+/// A taskbar progress value printable as ANSI OSC escape code
+enum TaskbarValue {
+    /// Do not output anything
+    None,
+    /// Remove progress
+    Remove,
+    /// Progress value 0-100
+    Value(u8),
+}
+
+impl std::fmt::Display for TaskbarValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // From https://conemu.github.io/en/AnsiEscapeCodes.html#ConEmu_specific_OSC
+        // ESC ] 9 ; 4 ; st ; pr ST
+        // When st is 0: remove progress.
+        // When st is 1: set progress value to pr (number, 0-100).
+        // When st is 2: set error state in taskbar, pr is optional.
+        // When st is 3: set indeterminate state.
+        // When st is 4: set paused state, pr is optional.
         let (state, progress) = match self {
-            Self::None => (0, 0),
+            Self::Remove => (0, 0),
             Self::Value(v) => (1, *v),
-            Self::Error => (2, 0),
+            Self::None => return Ok(()),
         };
         write!(f, "\x1b]9;4;{state};{progress}\x1b\\")
     }
@@ -149,6 +203,7 @@ impl<'gctx> Progress<'gctx> {
                 throttle: Throttle::new(),
                 last_line: None,
                 fixed_width: progress_config.width,
+                taskbar: TaskbarProgress::from_config(progress_config.taskbar),
             }),
         }
     }
@@ -240,8 +295,7 @@ impl<'gctx> Progress<'gctx> {
     /// calling it too often.
     pub fn print_now(&mut self, msg: &str) -> CargoResult<()> {
         match &mut self.state {
-            // TODO: figure our the correct data here
-            Some(s) => s.print("", msg, 30),
+            Some(s) => s.print("", msg),
             None => Ok(()),
         }
     }
@@ -287,7 +341,7 @@ impl Throttle {
 impl<'gctx> State<'gctx> {
     fn tick(&mut self, cur: usize, max: usize, msg: &str) -> CargoResult<()> {
         if self.done {
-            write!(self.gctx.shell().err(), "{}", TaskbarProgress::None)?;
+            write!(self.gctx.shell().err(), "{}", self.taskbar.remove())?;
             return Ok(());
         }
 
@@ -299,13 +353,13 @@ impl<'gctx> State<'gctx> {
         // return back to the beginning of the line for the next print.
         self.try_update_max_width();
         if let Some(pbar) = self.format.progress(cur, max) {
-            let percent = ((cur as f32) / (max as f32) * 100.0) as u8;
-            self.print(&pbar, msg, percent)?;
+            self.taskbar.percent = ((cur as f32) / (max as f32) * 100.0) as u8;
+            self.print(&pbar, msg)?;
         }
         Ok(())
     }
 
-    fn print(&mut self, prefix: &str, msg: &str, percent: u8) -> CargoResult<()> {
+    fn print(&mut self, prefix: &str, msg: &str) -> CargoResult<()> {
         self.throttle.update();
         self.try_update_max_width();
 
@@ -325,7 +379,7 @@ impl<'gctx> State<'gctx> {
             let mut shell = self.gctx.shell();
             shell.set_needs_clear(false);
             shell.status_header(&self.name)?;
-            write!(shell.err(), "{}{}\r", line, TaskbarProgress::Value(percent))?;
+            write!(shell.err(), "{}{}\r", line, self.taskbar.value())?;
             self.last_line = Some(line);
             shell.set_needs_clear(true);
         }
@@ -335,7 +389,7 @@ impl<'gctx> State<'gctx> {
 
     fn clear(&mut self) {
         // Always clear the taskbar progress
-        let _ = write!(self.gctx.shell().err(), "{}", TaskbarProgress::None);
+        let _ = write!(self.gctx.shell().err(), "{}", self.taskbar.remove());
         // No need to clear if the progress is not currently being displayed.
         if self.last_line.is_some() && !self.gctx.shell().is_cleared() {
             self.gctx.shell().err_erase_line();

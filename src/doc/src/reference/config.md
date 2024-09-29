@@ -1331,6 +1331,13 @@ Controls whether or not progress bar is shown in the terminal. Possible values:
 
 Sets the width for progress bar.
 
+#### `term.progress.taskbar`
+* Type: bool
+* Default: true on Windows, false on everything else
+* Environment: `CARGO_TERM_PROGRESS_TASKBAR`
+
+Enables output of progress to a taskbar via ANSI escape codes.
+
 [`cargo bench`]: ../commands/cargo-bench.md
 [`cargo login`]: ../commands/cargo-login.md
 [`cargo logout`]: ../commands/cargo-logout.md
