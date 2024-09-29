@@ -89,7 +89,7 @@ struct TaskbarProgress {
 impl TaskbarProgress {
     /// Creates a new `TaskbarProgress` from a cargo's config system.
     ///
-    /// * `config == None` enables taskbar progress reporting on Windows 
+    /// * `config == None` enables taskbar progress reporting on Windows
     /// by default and disables on other platforms
     fn from_config(config: Option<bool>) -> Self {
         let show = match config {
