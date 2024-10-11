@@ -544,8 +544,6 @@ fn cfg_raw_idents() {
 
     p.cargo("check")
         .with_stderr_data(str![[r#"
-[WARNING] [[ROOT]/foo/Cargo.toml] future-incompatibility: `cfg(r#fn)` is deprecated as `r#fn` is a keyword and not an identifier and should not have have been accepted in this position.
- | this was previously accepted by Cargo but is being phased out; it will become a hard error in a future release!
 [LOCKING] 1 package to latest compatible version
 [CHECKING] foo v0.1.0 ([ROOT]/foo)
 [FINISHED] `dev` profile [unoptimized + debuginfo] target(s) in [ELAPSED]s
@@ -642,20 +640,36 @@ fn cfg_keywords() {
         .with_stderr_data(str![[r#"
 [WARNING] [[ROOT]/foo/Cargo.toml] future-incompatibility: `cfg(async)` is deprecated as `async` is a keyword and not an identifier and should not have have been accepted in this position.
  | this was previously accepted by Cargo but is being phased out; it will become a hard error in a future release!
+ |
+ | [HELP] use raw-idents instead: `cfg(r#async)`
 [WARNING] [[ROOT]/foo/Cargo.toml] future-incompatibility: `cfg(fn)` is deprecated as `fn` is a keyword and not an identifier and should not have have been accepted in this position.
  | this was previously accepted by Cargo but is being phased out; it will become a hard error in a future release!
+ |
+ | [HELP] use raw-idents instead: `cfg(r#fn)`
 [WARNING] [[ROOT]/foo/Cargo.toml] future-incompatibility: `cfg(const)` is deprecated as `const` is a keyword and not an identifier and should not have have been accepted in this position.
  | this was previously accepted by Cargo but is being phased out; it will become a hard error in a future release!
+ |
+ | [HELP] use raw-idents instead: `cfg(r#const)`
 [WARNING] [[ROOT]/foo/Cargo.toml] future-incompatibility: `cfg(return)` is deprecated as `return` is a keyword and not an identifier and should not have have been accepted in this position.
  | this was previously accepted by Cargo but is being phased out; it will become a hard error in a future release!
+ |
+ | [HELP] use raw-idents instead: `cfg(r#return)`
 [WARNING] [.cargo/config.toml] future-incompatibility: `cfg(for)` is deprecated as `for` is a keyword and not an identifier and should not have have been accepted in this position.
  | this was previously accepted by Cargo but is being phased out; it will become a hard error in a future release!
+ |
+ | [HELP] use raw-idents instead: `cfg(r#for)`
 [WARNING] [.cargo/config.toml] future-incompatibility: `cfg(match)` is deprecated as `match` is a keyword and not an identifier and should not have have been accepted in this position.
  | this was previously accepted by Cargo but is being phased out; it will become a hard error in a future release!
+ |
+ | [HELP] use raw-idents instead: `cfg(r#match)`
 [WARNING] [.cargo/config.toml] future-incompatibility: `cfg(extern)` is deprecated as `extern` is a keyword and not an identifier and should not have have been accepted in this position.
  | this was previously accepted by Cargo but is being phased out; it will become a hard error in a future release!
+ |
+ | [HELP] use raw-idents instead: `cfg(r#extern)`
 [WARNING] [.cargo/config.toml] future-incompatibility: `cfg(crate)` is deprecated as `crate` is a keyword and not an identifier and should not have have been accepted in this position.
  | this was previously accepted by Cargo but is being phased out; it will become a hard error in a future release!
+ |
+ | [HELP] use raw-idents instead: `cfg(r#crate)`
 [LOCKING] 1 package to latest compatible version
 [CHECKING] foo v0.1.0 ([ROOT]/foo)
 [FINISHED] `dev` profile [unoptimized + debuginfo] target(s) in [ELAPSED]s
