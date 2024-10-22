@@ -294,3 +294,47 @@ fn source_replacement_with_registry_url() {
 "#]])
         .run();
 }
+
+#[cargo_test]
+fn source_replacement_with_no_package_in_directoy() {
+    let p = project()
+        .file(
+            "Cargo.toml",
+            r#"
+                [package]
+                name = "foo"
+                version = "0.1.0"
+                edition = "2021"
+
+                [dependencies]
+                bar = { version = "^0.8.9" }
+            "#,
+        )
+        .file("src/lib.rs", "")
+        .build();
+
+    t!(fs::create_dir(&p.root().join("vendor")));
+
+    let project_root = p.root();
+    let root_path = project_root.to_str().unwrap();
+    let crates_io = setup_replacement(&format!(
+        r#"
+            [source.crates-io]
+            replace-with = "vendored-sources"
+
+            [source.vendored-sources]
+            directory = "{root_path}/vendor"
+        "#
+    ));
+
+    p.cargo("build")
+        .replace_crates_io(crates_io.index_url())
+        .with_status(101)
+        .with_stderr_data(str![[r#"
+[ERROR] no matching package named `bar` found
+location searched: directory source `[ROOT]/foo/vendor` (which is replacing registry `crates-io`)
+required by package `foo v0.1.0 ([ROOT]/foo)`
+
+"#]])
+        .run();
+}
