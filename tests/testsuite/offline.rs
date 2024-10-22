@@ -184,7 +184,7 @@ fn cargo_compile_offline_not_try_update() {
         .with_status(101)
         .with_stderr_data(str![[r#"
 [ERROR] no matching package named `not_cached_dep` found
-location searched: registry `crates-io`
+location searched: crates.io index
 required by package `bar v0.1.0 ([ROOT]/bar)`
 As a reminder, you're using offline mode (--offline) which can sometimes cause surprising resolution failures, if this error is too confusing you may wish to retry without the offline flag.
 
@@ -195,7 +195,7 @@ As a reminder, you're using offline mode (--offline) which can sometimes cause s
     p.change_file(".cargo/config.toml", "net.offline = true");
     p.cargo("check").with_status(101).with_stderr_data(str![[r#"
 [ERROR] no matching package named `not_cached_dep` found
-location searched: registry `crates-io`
+location searched: crates.io index
 required by package `bar v0.1.0 ([ROOT]/bar)`
 As a reminder, you're using offline mode (--offline) which can sometimes cause surprising resolution failures, if this error is too confusing you may wish to retry without the offline flag.
 
@@ -366,7 +366,7 @@ Caused by:
         .run();
 }
 
-fn update_offline_not_cached() {
+fn update_offline_not_cached(is_registry_set: bool) {
     let p = project()
         .file(
             "Cargo.toml",
@@ -383,30 +383,39 @@ fn update_offline_not_cached() {
         )
         .file("src/main.rs", "fn main() {}")
         .build();
+
+    let location_searched_message;
+    if is_registry_set {
+        location_searched_message =
+            "`dummy-registry` index (which is replacing registry `crates-io`)";
+    } else {
+        location_searched_message = "crates.io index"
+    }
+
     p.cargo("update --offline")
         .with_status(101)
-        .with_stderr_data(
+        .with_stderr_data(&format!(
             "\
 [ERROR] no matching package named `bar` found
-location searched: registry `crates-io`
+location searched: {location_searched_message}
 required by package `foo v0.0.1 ([ROOT]/foo)`
 As a reminder, you're using offline mode (--offline) which can sometimes cause \
 surprising resolution failures, if this error is too confusing you may wish to \
 retry without the offline flag.
-",
-        )
+"
+        ))
         .run();
 }
 
 #[cargo_test]
 fn update_offline_not_cached_sparse() {
     let _registry = RegistryBuilder::new().http_index().build();
-    update_offline_not_cached()
+    update_offline_not_cached(true)
 }
 
 #[cargo_test]
 fn update_offline_not_cached_git() {
-    update_offline_not_cached()
+    update_offline_not_cached(false)
 }
 
 #[cargo_test]
@@ -756,7 +765,7 @@ fn main(){
         .with_stderr_data(
             str![[r#"
 [ERROR] no matching package named `present_dep` found
-location searched: registry `crates-io`
+location searched: `dummy-registry` index (which is replacing registry `crates-io`)
 required by package `foo v0.1.0 ([ROOT]/foo)`
 As a reminder, you're using offline mode (--offline) which can sometimes cause surprising resolution failures, if this error is too confusing you may wish to retry without the offline flag.
 
