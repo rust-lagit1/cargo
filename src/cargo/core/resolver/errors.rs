@@ -353,7 +353,10 @@ pub(super) fn activation_error(
             ));
             msg.push('\n');
         }
-        msg.push_str(&format!("location searched: {}\n", dep.source_id()));
+        msg.push_str(&format!(
+            "location searched: {}\n",
+            registry.describe_source(dep.source_id())
+        ));
         msg.push_str("required by ");
         msg.push_str(&describe_path_in_context(
             resolver_ctx,
