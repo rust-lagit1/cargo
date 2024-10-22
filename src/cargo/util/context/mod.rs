@@ -63,7 +63,7 @@ use std::io::SeekFrom;
 use std::mem;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::sync::Once;
+use std::sync::{Arc, Once};
 use std::time::Instant;
 
 use self::ConfigValue as CV;
@@ -227,7 +227,7 @@ pub struct GlobalContext {
     target_cfgs: LazyCell<Vec<(String, TargetCfgConfig)>>,
     doc_extern_map: LazyCell<RustdocExternMap>,
     progress_config: ProgressConfig,
-    env_config: LazyCell<EnvConfig>,
+    env_config: LazyCell<Arc<EnvConfig>>,
     /// This should be false if:
     /// - this is an artifact of the rustc distribution process for "stable" or for "beta"
     /// - this is an `#[test]` that does not opt in with `enable_nightly_features`
@@ -1833,10 +1833,10 @@ impl GlobalContext {
         &self.progress_config
     }
 
-    pub fn env_config(&self) -> CargoResult<&EnvConfig> {
+    pub fn env_config(&self) -> CargoResult<&Arc<EnvConfig>> {
         let env_config = self
             .env_config
-            .try_borrow_with(|| self.get::<EnvConfig>("env"))?;
+            .try_borrow_with(|| CargoResult::Ok(Arc::new(self.get::<EnvConfig>("env")?)))?;
 
         // Reasons for disallowing these values:
         //
